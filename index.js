@@ -1,24 +1,30 @@
 const axios = require('axios');
 const readline = require('readline');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const colors = require('colors');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-const proxies = [
-  'http://proxy1:8080',
-  'http://proxy2:8080',
-  'http://proxy3:8080',
-  'http://proxy4:8080',
-  'http://proxy5:8080'
-];
-
+let proxies = [];
 let proxyIndex = 0;
 
+async function fetchProxies() {
+  try {
+    const res = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all');
+    const list = res.data.split('\r\n').filter(p => p.length > 0);
+    proxies = list.map(p => `socks5://${p}`);
+    console.log(colors.green(`Pobrano ${proxies.length} SOCKS5 proxy`));
+  } catch {
+    console.log(colors.yellow('Nie udało się pobrać proxy, używam fallback'));
+    proxies = ['socks5://103.152.112.120:1080', 'socks5://103.152.112.122:1080'];
+  }
+}
+
 function getProxyAgent() {
+  if (proxies.length === 0) return undefined;
   const proxy = proxies[proxyIndex % proxies.length];
   proxyIndex++;
-  return new HttpsProxyAgent(proxy);
+  return new SocksProxyAgent(proxy);
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -52,7 +58,7 @@ async function checkDiscord(username) {
   try {
     const res = await axios.get(`https://discord.com/api/v9/users/${username}`, {
       httpsAgent: getProxyAgent(),
-      timeout: 10000,
+      timeout: 15000,
       headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' }
     });
     return res.status === 404;
@@ -67,11 +73,12 @@ async function checkTikTok(username) {
   try {
     const res = await axios.get(`https://www.tiktok.com/@${username}`, {
       httpsAgent: getProxyAgent(),
-      timeout: 10000,
+      timeout: 15000,
       maxRedirects: 5,
       headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' }
     });
-    if (res.status === 404 || (res.request && res.request.res && res.request.res.responseUrl && res.request.res.responseUrl.includes('not-found'))) return true;
+    if (res.status === 404) return true;
+    if (res.request && res.request.res && res.request.res.responseUrl && res.request.res.responseUrl.includes('not-found')) return true;
     return false;
   } catch (err) {
     if (err.response && err.response.status === 404) return true;
@@ -84,6 +91,9 @@ async function main() {
   console.log(colors.blue.bold('=============================='));
   console.log(colors.blue.bold('   ZIBER FINDER'));
   console.log(colors.blue.bold('=============================='));
+
+  console.log(colors.yellow('Pobieranie listy SOCKS5 proxy...'));
+  await fetchProxies();
 
   while (true) {
     console.log('\n' + colors.cyan('[1]') + colors.blue(' Discord'));
@@ -103,20 +113,19 @@ async function main() {
 
     console.log(colorPlatform(`Generuję nicki o długości ${length}...`));
     const nicknames = platform === 'DISCORD' ? generateDiscordNames(length) : generateTikTokNames(length);
-    console.log(colorPlatform(`Wygenerowano ${nicknames.length} nicków. Sprawdzanie przez proxy...`));
+    console.log(colorPlatform(`Wygenerowano ${nicknames.length} nicków. Sprawdzanie przez SOCKS5 proxy...`));
     console.log(colorPlatform('='.repeat(60)));
 
-    const available = [], taken = [];
+    const available = [];
     for (let i = 0; i < nicknames.length; i++) {
       const nick = nicknames[i];
-      if (i % 10 === 0 && i > 0) await sleep(500);
+      if (i % 10 === 0 && i > 0) await sleep(300);
 
       const status = platform === 'DISCORD' ? await checkDiscord(nick) : await checkTikTok(nick);
       if (status === true) {
         available.push(nick);
         console.log(colors.green.bold(`[WOLNE] ${nick}`));
       } else if (status === false) {
-        taken.push(nick);
         console.log(colors.red.bold(`[ZAJĘTE] ${nick}`));
       } else {
         console.log(colors.yellow(`[NIEZNANE] ${nick}`));
@@ -125,7 +134,6 @@ async function main() {
 
     console.log(colorPlatform('\n' + '='.repeat(60)));
     console.log(colors.green.bold(`Dostępne (${available.length}): ${available.join(', ')}`));
-    console.log(colors.red.bold(`Zajęte (${taken.length})`));
   }
 }
 
