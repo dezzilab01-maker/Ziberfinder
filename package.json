@@ -1,0 +1,11 @@
+{
+  "name": "ziber-finder",
+  "version": "1.0.0",
+  "description": "ZIBER FINDER - Discord & TikTok username checker",
+  "main": "ziber_finder.js",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "colors": "^1.4.0",
+    "https-proxy-agent": "^7.0.0"
+  }
+}
